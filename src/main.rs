@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use std::env;
 use std::fs;
 
@@ -42,41 +41,42 @@ fn main() {
     decode_instructions(&instruction_stream);
 }
 
-fn decode_instructions(bytes: &[u8]) {
+fn decode_instructions(mut bytes: &[u8]) {
     // The while loop is needed because different instructions have different lengths
-    let mut index: usize = 0;
-    let mut inst: &str;
-    while index < bytes.len() {
-        let byte1 = bytes[index];
-        index += 1;
+    while !bytes.is_empty() {
+        let byte1 = bytes[0];
+        bytes = &bytes[1..];
+
         let opcode = byte1 >> OPCODE_SHIFT;
-        if opcode == MOV_OPCODE {
-            inst = "mov";
-        } else {
-            panic!("Unknown instruction");
-        }
+        let inst = match opcode {
+            MOV_OPCODE => "mov",
+            _ => panic!("Unsupported instruction. Opcode: {opcode}"),
+        };
+
         let w_bit = ((byte1 & W_BIT_MASK) >> W_BIT_SHIFT) as usize;
         let d_bit: bool = matches!((byte1 & D_BIT_MASK) >> D_BIT_SHIFT, 1);
 
-        if index >= bytes.len() {
+        if bytes.is_empty() {
             panic!("Not enough bytes to decode instructions");
         }
-
-        let byte2 = bytes[index];
-        index += 1;
+        let byte2 = bytes[0];
+        bytes = &bytes[1..];
         let mod_bytes = byte2 >> MOD_SHIFT;
         if mod_bytes != 0b11 {
             panic!("Cannot decode this mov instruction yet");
         }
         let reg = ((byte2 & REG_MASK) >> REG_SHIFT) as usize;
         let rm = (byte2 & RM_MASK) as usize;
-        let arg1: &str = REGISTER_MAP[reg][w_bit];
-        let arg2: &str = REGISTER_MAP[rm][w_bit];
 
-        if d_bit {
-            println!("{} {}, {}", inst, arg1, arg2);
+        let reg_arg: &str = REGISTER_MAP[reg][w_bit];
+        let rm_arg: &str = REGISTER_MAP[rm][w_bit];
+
+        let (dest, src) = if d_bit {
+            (reg_arg, rm_arg)
         } else {
-            println!("{} {}, {}", inst, arg2, arg1);
-        }
+            (rm_arg, reg_arg)
+        };
+
+        println!("{} {}, {}", inst, dest, src);
     }
 }
