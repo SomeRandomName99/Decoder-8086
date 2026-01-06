@@ -109,7 +109,7 @@ fn decode_instructions(mut bytes: &[u8], arg1: &mut String, arg2: &mut String) {
                 bytes = &bytes[2..];
             }
             write!(dst, "{}", reg_arg).unwrap();
-            if mod_bytes != 0 {
+            if displacement != 0 {
                 write!(src, "[{} + {}]", reg, displacement).unwrap();
             } else {
                 write!(src, "[{}]", reg).unwrap();
