@@ -2,10 +2,6 @@ use std::env;
 use std::fmt::Write;
 use std::fs;
 
-const OPCODE_SHIFT: u8 = 2;
-
-const MOV_OPCODE: u8 = 0b100010;
-
 const REGISTER_MAP: [[&str; 2]; 8] = [
     ["al", "ax"],
     ["cl", "cx"],
@@ -50,12 +46,30 @@ fn decode_instructions(mut bytes: &[u8], arg1: &mut String, arg2: &mut String) {
             }
             _ => {}
         };
+
         // Match 6 bit instructions
         let opcode = byte1 >> 2;
         match opcode {
-            MOV_OPCODE => decode_mov_regmem_reg(&mut bytes, arg1, arg2),
-            _ => panic!("Unsupported instruction. Opcode byte: {byte1:b}"),
+            0b100010 => {
+                decode_mov_regmem_reg(&mut bytes, arg1, arg2);
+                continue 'decode;
+            }
+            _ => {}
         };
+
+        // Match 7 bit instructions
+        let opcode = byte1 >> 1;
+        match opcode {
+            0b1010000 => {
+                decode_mov_mem_accu(&mut bytes, true);
+                continue 'decode;
+            }
+            0b1010001 => {
+                decode_mov_mem_accu(&mut bytes, false);
+                continue 'decode;
+            }
+            _ => panic!("Unsupported instruction. Opcode byte: {byte1:b}"),
+        }
     }
 }
 
@@ -151,4 +165,15 @@ fn decode_mov_imm_reg(bytes: &mut &[u8]) {
     }
 
     println!("mov {}, {}", reg_arg, immediate);
+}
+
+fn decode_mov_mem_accu(bytes: &mut &[u8], accu_first: bool) {
+    let address = u16::from_le_bytes([bytes[1], bytes[2]]);
+    *bytes = &bytes[3..];
+
+    if accu_first {
+        println!("mov ax, [{address}]");
+    } else {
+        println!("mov [{address}], ax");
+    }
 }
