@@ -110,10 +110,6 @@ fn decode_mov_regmem_reg(bytes: &mut &[u8], arg1: &mut String, arg2: &mut String
         dst.push_str(reg_arg);
         src.push_str(rm_arg);
     } else {
-        assert!(
-            !(r_m == 0b110 && mod_bytes == 0),
-            "Direct address mode is not yet supported"
-        );
         let reg = match r_m {
             0b000 => "bx + si",
             0b001 => "bx + di",
@@ -125,19 +121,29 @@ fn decode_mov_regmem_reg(bytes: &mut &[u8], arg1: &mut String, arg2: &mut String
             0b111 => "bx",
             _ => panic!("Invalid R/M"),
         };
-        let mut displacement: i16 = 0;
-        if mod_bytes == 0b01 {
-            displacement |= (bytes[0] as i8) as i16;
-            *bytes = &bytes[1..];
-        } else if mod_bytes == 0b10 {
-            displacement = i16::from_le_bytes([bytes[0], bytes[1]]);
+
+        // Direct address mode
+        if r_m == 0b110 && mod_bytes == 0 {
+            let address: u16 = u16::from_le_bytes([bytes[0], bytes[1]]);
             *bytes = &bytes[2..];
-        }
-        write!(dst, "{}", reg_arg).unwrap();
-        if displacement != 0 {
-            write!(src, "[{} + {}]", reg, displacement).unwrap();
+
+            write!(src, "[{address}]").unwrap();
+            write!(dst, "{reg}").unwrap();
         } else {
-            write!(src, "[{}]", reg).unwrap();
+            let mut displacement: i16 = 0;
+            if mod_bytes == 0b01 {
+                displacement = (bytes[0] as i8) as i16;
+                *bytes = &bytes[1..];
+            } else if mod_bytes == 0b10 {
+                displacement = i16::from_le_bytes([bytes[0], bytes[1]]);
+                *bytes = &bytes[2..];
+            }
+            write!(dst, "{}", reg_arg).unwrap();
+            if displacement != 0 {
+                write!(src, "[{} + {}]", reg, displacement).unwrap();
+            } else {
+                write!(src, "[{}]", reg).unwrap();
+            }
         }
     }
 
