@@ -89,15 +89,11 @@ fn decode_mov_regmem_reg(bytes: &mut &[u8], arg1: &mut String, arg2: &mut String
     let w_bit = ((byte1 & W_BIT_MASK) >> W_BIT_SHIFT) as usize;
     let d_bit: bool = matches!((byte1 & D_BIT_MASK) >> D_BIT_SHIFT, 1);
 
-    if bytes.is_empty() {
-        panic!("Not enough bytes to decode instructions");
-    }
     let byte2 = bytes[0];
     *bytes = &bytes[1..];
     let mod_bytes = byte2 >> MOD_SHIFT;
-
     let reg = ((byte2 & REG_MASK) >> REG_SHIFT) as usize;
-    let reg_arg: &str = REGISTER_MAP[reg][w_bit];
+    let reg_str: &str = REGISTER_MAP[reg][w_bit];
     let r_m = (byte2 & RM_MASK) as usize;
 
     let (dst, src) = match d_bit {
@@ -105,12 +101,12 @@ fn decode_mov_regmem_reg(bytes: &mut &[u8], arg1: &mut String, arg2: &mut String
         false => (&mut *arg2, &mut *arg1),
     };
     if mod_bytes == 0b11 {
-        let rm_arg: &str = REGISTER_MAP[r_m][w_bit];
+        let rm_reg_str: &str = REGISTER_MAP[r_m][w_bit];
 
-        dst.push_str(reg_arg);
-        src.push_str(rm_arg);
+        dst.push_str(reg_str);
+        src.push_str(rm_reg_str);
     } else {
-        let reg = match r_m {
+        let rm_reg_str = match r_m {
             0b000 => "bx + si",
             0b001 => "bx + di",
             0b010 => "bp + si",
@@ -128,7 +124,7 @@ fn decode_mov_regmem_reg(bytes: &mut &[u8], arg1: &mut String, arg2: &mut String
             *bytes = &bytes[2..];
 
             write!(src, "[{address}]").unwrap();
-            write!(dst, "{reg}").unwrap();
+            write!(dst, "{rm_reg_str}").unwrap();
         } else {
             let mut displacement: i16 = 0;
             if mod_bytes == 0b01 {
@@ -138,11 +134,11 @@ fn decode_mov_regmem_reg(bytes: &mut &[u8], arg1: &mut String, arg2: &mut String
                 displacement = i16::from_le_bytes([bytes[0], bytes[1]]);
                 *bytes = &bytes[2..];
             }
-            write!(dst, "{}", reg_arg).unwrap();
+            write!(dst, "{}", reg_str).unwrap();
             if displacement != 0 {
-                write!(src, "[{} + {}]", reg, displacement).unwrap();
+                write!(src, "[{} + {}]", rm_reg_str, displacement).unwrap();
             } else {
-                write!(src, "[{}]", reg).unwrap();
+                write!(src, "[{}]", rm_reg_str).unwrap();
             }
         }
     }
@@ -159,7 +155,7 @@ fn decode_mov_imm_reg(bytes: &mut &[u8]) {
     *bytes = &bytes[1..];
     let w_bit = ((byte1 & W_BIT_MASK) >> W_BIT_SHIFT) as usize;
     let reg = (byte1 & REG_MASK) as usize;
-    let reg_arg: &str = REGISTER_MAP[reg][w_bit];
+    let reg_str: &str = REGISTER_MAP[reg][w_bit];
 
     let mut immediate: i16 = 0;
     if w_bit == 1 {
@@ -170,7 +166,7 @@ fn decode_mov_imm_reg(bytes: &mut &[u8]) {
         *bytes = &bytes[1..];
     }
 
-    println!("mov {}, {}", reg_arg, immediate);
+    println!("mov {}, {}", reg_str, immediate);
 }
 
 fn decode_mov_mem_accu(bytes: &mut &[u8], accu_first: bool) {
