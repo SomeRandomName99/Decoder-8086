@@ -118,13 +118,13 @@ fn decode_mov_regmem_reg(bytes: &mut &[u8], arg1: &mut String, arg2: &mut String
             _ => panic!("Invalid R/M"),
         };
 
+        write!(dst, "{reg_str}").unwrap();
         // Direct address mode
         if r_m == 0b110 && mod_bytes == 0 {
             let address: u16 = u16::from_le_bytes([bytes[0], bytes[1]]);
             *bytes = &bytes[2..];
 
             write!(src, "[{address}]").unwrap();
-            write!(dst, "{rm_reg_str}").unwrap();
         } else {
             let mut displacement: i16 = 0;
             if mod_bytes == 0b01 {
@@ -134,7 +134,6 @@ fn decode_mov_regmem_reg(bytes: &mut &[u8], arg1: &mut String, arg2: &mut String
                 displacement = i16::from_le_bytes([bytes[0], bytes[1]]);
                 *bytes = &bytes[2..];
             }
-            write!(dst, "{}", reg_str).unwrap();
             if displacement != 0 {
                 write!(src, "[{} + {}]", rm_reg_str, displacement).unwrap();
             } else {
