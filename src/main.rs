@@ -194,7 +194,7 @@ fn decode_mov_imm_regmem(bytes: &mut &[u8], dst: &mut String, src: &mut String) 
         write!(src, "byte {immediate}").unwrap();
     }
 
-    println!("mov {dst} {src}");
+    println!("mov {dst}, {src}");
 }
 
 fn decode_regmem_reg(instruction: &str, bytes: &mut &[u8], arg1: &mut String, arg2: &mut String) {
