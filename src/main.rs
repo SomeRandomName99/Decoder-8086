@@ -123,6 +123,30 @@ fn decode_instructions(mut bytes: &[u8], arg1: &mut String, arg2: &mut String) {
                 decode_regmem_reg("xchg", &mut bytes, arg1, arg2);
                 continue 'decode;
             }
+            0b1110010 => {
+                let is_out = false;
+                let is_fixed = true;
+                decode_in_out(is_out, &mut bytes, arg1, arg2, is_fixed);
+                continue 'decode;
+            }
+            0b1110110 => {
+                let is_out = false;
+                let is_fixed = false;
+                decode_in_out(is_out, &mut bytes, arg1, arg2, is_fixed);
+                continue 'decode;
+            }
+            0b1110011 => {
+                let is_out = true;
+                let is_fixed = true;
+                decode_in_out(is_out, &mut bytes, arg1, arg2, is_fixed);
+                continue 'decode;
+            }
+            0b1110111 => {
+                let is_out = true;
+                let is_fixed = false;
+                decode_in_out(is_out, &mut bytes, arg1, arg2, is_fixed);
+                continue 'decode;
+            }
             _ => (),
         }
 
@@ -130,21 +154,44 @@ fn decode_instructions(mut bytes: &[u8], arg1: &mut String, arg2: &mut String) {
         match byte1 {
             0b01110000..=0b01111111 => {
                 decode_jmp_and_loops(&mut bytes, true);
+                continue 'decode;
             }
             0b11100000..=0b11100011 => {
                 decode_jmp_and_loops(&mut bytes, false);
+                continue 'decode;
             }
             0b11111111 => {
                 decode_push_pop_mem("push", &mut bytes, arg1);
+                continue 'decode;
             }
             0b10001111 => {
                 decode_push_pop_mem("pop", &mut bytes, arg1);
+                continue 'decode;
             }
             0b00000110 | 0b00001110 | 0b00010110 | 0b00011110 => {
                 decode_push_pop_seg("push", &mut bytes);
+                continue 'decode;
             }
             0b00000111 | 0b00001111 | 0b00010111 | 0b00011111 => {
                 decode_push_pop_seg("pop", &mut bytes);
+                continue 'decode;
+            }
+            0b11010111 => {
+                println!("xlat");
+                bytes = &bytes[1..];
+                continue 'decode;
+            }
+            0b10001101 => {
+                decode_load_ptr("lea", &mut bytes, arg1);
+                continue 'decode;
+            }
+            0b11000101 => {
+                decode_load_ptr("lds", &mut bytes, arg1);
+                continue 'decode;
+            }
+            0b11000100 => {
+                decode_load_ptr("les", &mut bytes, arg1);
+                continue 'decode;
             }
             _ => panic!(
                 "Unsupported instruction. Opcode byte: {byte1:#b}, {:#b}",
@@ -426,4 +473,44 @@ fn decode_xchg_acc(bytes: &mut &[u8]) {
 
     let reg_idx = (byte1 & 0b111) as usize;
     println!("xchg ax, {}", REGISTER_MAP[reg_idx][1]);
+}
+
+fn decode_in_out(
+    is_out: bool,
+    bytes: &mut &[u8],
+    arg1: &mut String,
+    arg2: &mut String,
+    is_fixed: bool,
+) {
+    let byte1 = bytes[0];
+    *bytes = &bytes[1..];
+
+    let w_bit = (byte1 & W_BIT_MASK) as usize;
+    let a_reg = REGISTER_MAP[0][w_bit];
+
+    let inst_name = if is_out { "out" } else { "in" };
+    let (dst, src) = match is_out {
+        true => (&mut *arg2, &mut *arg1),
+        false => (&mut *arg1, &mut *arg2),
+    };
+    write!(dst, "{a_reg}").unwrap();
+
+    if is_fixed {
+        let port_num = bytes[0];
+        *bytes = &bytes[1..];
+        write!(src, "{port_num}").unwrap();
+    } else {
+        write!(src, "dx").unwrap();
+    }
+    println!("{inst_name} {arg1}, {arg2}");
+}
+
+fn decode_load_ptr(inst_name: &str, bytes: &mut &[u8], arg1: &mut String) {
+    *bytes = &bytes[1..];
+
+    let (reg, eff_add) = decode_effective_address_calculation(bytes, 1);
+    let reg_str = REGISTER_MAP[reg][1];
+    write_effective_address(arg1, eff_add);
+
+    println!("{inst_name} {reg_str}, {arg1}");
 }
