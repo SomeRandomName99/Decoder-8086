@@ -21,6 +21,7 @@ const CONDITIONAL_JMP_NAMES: [&str; 16] = [
     "jle", "jg",
 ];
 const LOOP_NAMES: [&str; 4] = ["loopnz", "loopz", "loop", "jcxz"];
+const SEGMENT_REGS: [&str; 4] = ["es", "cs", "ss", "ds"];
 
 fn main() {
     let args: Vec<String> = env::args().collect();
@@ -52,6 +53,20 @@ fn decode_instructions(mut bytes: &[u8], arg1: &mut String, arg2: &mut String) {
         match opcode {
             0b1011 => {
                 decode_mov_imm_reg(&mut bytes);
+                continue 'decode;
+            }
+            _ => {}
+        };
+
+        // Match 5 bit instructions
+        let opcode = byte1 >> 3;
+        match opcode {
+            0b01010 => {
+                decode_push_pop_reg("push", &mut bytes);
+                continue 'decode;
+            }
+            0b01011 => {
+                decode_push_pop_reg("pop", &mut bytes);
                 continue 'decode;
             }
             _ => {}
@@ -110,6 +125,18 @@ fn decode_instructions(mut bytes: &[u8], arg1: &mut String, arg2: &mut String) {
             }
             0b11100000..=0b11100011 => {
                 decode_jmp_and_loops(&mut bytes, false);
+            }
+            0b11111111 => {
+                decode_push_pop_mem("push", &mut bytes, arg1);
+            }
+            0b10001111 => {
+                decode_push_pop_mem("pop", &mut bytes, arg1);
+            }
+            0b00000110 | 0b00001110 | 0b00010110 | 0b00011110 => {
+                decode_push_pop_seg("push", &mut bytes);
+            }
+            0b00000111 | 0b00001111 | 0b00010111 | 0b00011111 => {
+                decode_push_pop_seg("pop", &mut bytes);
             }
             _ => panic!(
                 "Unsupported instruction. Opcode byte: {byte1:#b}, {:#b}",
@@ -355,4 +382,32 @@ fn decode_jmp_and_loops(bytes: &mut &[u8], is_jmp: bool) {
     *bytes = &bytes[1..];
 
     println!("{inst_name} $+2+{disp}");
+}
+
+fn decode_push_pop_mem(inst_name: &str, bytes: &mut &[u8], dst: &mut String) {
+    *bytes = &bytes[1..];
+
+    dst.push_str("word ");
+    let (_, eff_add) = decode_effective_address_calculation(bytes, 1);
+    write_effective_address(dst, eff_add);
+
+    println!("{inst_name} {dst}");
+}
+
+fn decode_push_pop_reg(inst_name: &str, bytes: &mut &[u8]) {
+    let byte1 = bytes[0];
+    *bytes = &bytes[1..];
+
+    let reg_idx = (byte1 & 0b111) as usize;
+
+    println!("{inst_name} {}", REGISTER_MAP[reg_idx][1]);
+}
+
+fn decode_push_pop_seg(inst_name: &str, bytes: &mut &[u8]) {
+    let byte1 = bytes[0];
+    *bytes = &bytes[1..];
+
+    let seg_idx = ((byte1 >> 3) & 0b11) as usize;
+
+    println!("{inst_name} {}", SEGMENT_REGS[seg_idx]);
 }
