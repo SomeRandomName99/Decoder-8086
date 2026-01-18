@@ -16,6 +16,11 @@ const REGISTER_MAP: [[&str; 2]; 8] = [
     ["bh", "di"],
 ];
 const INSTRUCTION_NAMES: [&str; 8] = ["add", "or", "adc", "sbb", "and", "sub", "xor", "cmp"];
+const CONDITIONAL_JMP_NAMES: [&str; 16] = [
+    "jo", "jno", "jb", "jnb", "je", "jne", "jbe", "ja", "js", "jns", "jp", "jnp", "jl", "jge",
+    "jle", "jg",
+];
+const LOOP_NAMES: [&str; 4] = ["loopnz", "loopz", "loop", "jcxz"];
 
 fn main() {
     let args: Vec<String> = env::args().collect();
@@ -94,6 +99,17 @@ fn decode_instructions(mut bytes: &[u8], arg1: &mut String, arg2: &mut String) {
                 let inst_name = INSTRUCTION_NAMES[inst_idx];
                 decode_arithmetic_imm_acc(inst_name, &mut bytes);
                 continue 'decode;
+            }
+            _ => (),
+        }
+
+        // match 8 bit instruction
+        match byte1 {
+            0b01110000..=0b01111111 => {
+                decode_jmp_and_loops(&mut bytes, true);
+            }
+            0b11100000..=0b11100011 => {
+                decode_jmp_and_loops(&mut bytes, false);
             }
             _ => panic!(
                 "Unsupported instruction. Opcode byte: {byte1:#b}, {:#b}",
@@ -323,4 +339,20 @@ fn decode_arithmetic_imm_acc(inst_name: &str, bytes: &mut &[u8]) {
     let accu_name = if w_bit == 1 { "ax" } else { "al" };
 
     println!("{inst_name} {accu_name}, {immediate}");
+}
+
+fn decode_jmp_and_loops(bytes: &mut &[u8], is_jmp: bool) {
+    let byte1 = bytes[0];
+    *bytes = &bytes[1..];
+
+    let inst_name = if is_jmp {
+        CONDITIONAL_JMP_NAMES[(byte1 & 0b1111) as usize]
+    } else {
+        LOOP_NAMES[(byte1 & 0b11) as usize]
+    };
+
+    let disp = bytes[0] as i8;
+    *bytes = &bytes[1..];
+
+    println!("{inst_name} $+2+{disp}");
 }
