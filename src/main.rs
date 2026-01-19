@@ -5,8 +5,8 @@ use std::fs;
 const W_BIT_MASK: u8 = 0b1;
 const S_BIT_SHIFT: u8 = 0b1;
 const S_BIT_MASK: u8 = 0b1;
-const REG_SHIFT: u8 = 3;
-const REG_MASK: u8 = 0b00111000;
+const GRP_INST_IDX_SHIFT: u8 = 3;
+const GRP_INST_IDX_MASK: u8 = 0b111;
 const REGISTER_MAP: [[&str; 2]; 8] = [
     ["al", "ax"],
     ["cl", "cx"],
@@ -167,14 +167,19 @@ fn decode_instructions(mut bytes: &[u8], arg1: &mut String, arg2: &mut String) {
                 continue 'decode;
             }
             0b1111011 => {
-                let reg_idx = (bytes[1] & REG_MASK >> REG_SHIFT) as usize;
+                let reg_idx = (bytes[1] >> GRP_INST_IDX_SHIFT & GRP_INST_IDX_MASK) as usize;
                 if reg_idx >= 2 {
                     decode_unary_regmem(GRP1[reg_idx], &mut bytes, arg1);
                 } else {
                     decode_imm_regmem("test", &mut bytes, arg1, arg2);
                 }
+                continue 'decode;
             }
-            0b1111111 => {}
+            0b1111111 => {
+                let reg_idx = (bytes[1] >> GRP_INST_IDX_SHIFT & GRP_INST_IDX_MASK) as usize;
+                decode_unary_regmem(GRP2[reg_idx], &mut bytes, arg1);
+                continue 'decode;
+            }
             _ => (),
         }
 
@@ -188,12 +193,8 @@ fn decode_instructions(mut bytes: &[u8], arg1: &mut String, arg2: &mut String) {
                 decode_jmp_and_loops(&mut bytes, false);
                 continue 'decode;
             }
-            0b11111111 => {
-                decode_push_pop_mem("push", &mut bytes, arg1);
-                continue 'decode;
-            }
             0b10001111 => {
-                decode_push_pop_mem("pop", &mut bytes, arg1);
+                decode_unary_regmem("pop", &mut bytes, arg1);
                 continue 'decode;
             }
             0b00000110 | 0b00001110 | 0b00010110 | 0b00011110 => {
@@ -258,6 +259,7 @@ fn decode_instructions(mut bytes: &[u8], arg1: &mut String, arg2: &mut String) {
             }
             0b00101111 => {
                 println!("das");
+                bytes = &bytes[1..];
                 continue 'decode;
             }
             _ => panic!(
@@ -281,12 +283,14 @@ fn decode_effective_address_calculation(
 ) -> (usize, EffectiveAddress) {
     const MOD_SHIFT: u8 = 6;
     const RM_MASK: u8 = 0b000000111;
+    const REG_SHIFT: u8 = 3;
+    const REG_MASK: u8 = 0b111;
 
     let byte = bytes[0];
     *bytes = &bytes[1..];
     let mod_bytes = byte >> MOD_SHIFT;
     let r_m = (byte & RM_MASK) as usize;
-    let reg = ((byte & REG_MASK) >> REG_SHIFT) as usize;
+    let reg = ((byte >> REG_SHIFT) & REG_MASK) as usize;
 
     if mod_bytes == 0b11 {
         (reg, EffectiveAddress::Reg(REGISTER_MAP[r_m][w_bit]))
@@ -323,7 +327,7 @@ fn decode_effective_address_calculation(
 }
 
 fn write_effective_address_size(buffer: &mut String, eff_add: &EffectiveAddress, w_bit: usize) {
-    if w_bit == 1 && !matches!(*eff_add, EffectiveAddress::Reg(_)) {
+    if !matches!(*eff_add, EffectiveAddress::Reg(_)) {
         if w_bit == 1 {
             buffer.push_str("word ");
         } else {
@@ -496,15 +500,15 @@ fn decode_jmp_and_loops(bytes: &mut &[u8], is_jmp: bool) {
     println!("{inst_name} $+2+{disp}");
 }
 
-fn decode_push_pop_mem(inst_name: &str, bytes: &mut &[u8], dst: &mut String) {
-    *bytes = &bytes[1..];
-
-    dst.push_str("word ");
-    let (_, eff_add) = decode_effective_address_calculation(bytes, 1);
-    write_effective_address(dst, &eff_add);
-
-    println!("{inst_name} {dst}");
-}
+// fn decode_push_pop_mem(inst_name: &str, bytes: &mut &[u8], dst: &mut String) {
+//     *bytes = &bytes[1..];
+//
+//     dst.push_str("word ");
+//     let (_, eff_add) = decode_effective_address_calculation(bytes, 1);
+//     write_effective_address(dst, &eff_add);
+//
+//     println!("{inst_name} {dst}");
+// }
 
 fn decode_one_byte_reg(inst_name: &str, bytes: &mut &[u8]) {
     let byte1 = bytes[0];
