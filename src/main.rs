@@ -17,15 +17,16 @@ const REGISTER_MAP: [[&str; 2]; 8] = [
     ["dh", "si"],
     ["bh", "di"],
 ];
-const ALU_INST_NAMES: [&str; 8] = ["add", "or", "adc", "sbb", "and", "sub", "xor", "cmp"];
+const ALU_NAMES: [&str; 8] = ["add", "or", "adc", "sbb", "and", "sub", "xor", "cmp"];
 const CONDITIONAL_JMP_NAMES: [&str; 16] = [
     "jo", "jno", "jb", "jnb", "je", "jne", "jbe", "ja", "js", "jns", "jp", "jnp", "jl", "jge",
     "jle", "jg",
 ];
 const LOOP_NAMES: [&str; 4] = ["loopnz", "loopz", "loop", "jcxz"];
 const SEGMENT_REGS: [&str; 4] = ["es", "cs", "ss", "ds"];
-const GRP1: [&str; 8] = ["test", "???", "not", "neg", "mul", "imul", "div", "idiv"];
-const GRP2: [&str; 8] = ["inc", "dec", "call", "call", "jmp", "jmp", "push", "???"];
+const GRP1_NAMES: [&str; 8] = ["test", "???", "not", "neg", "mul", "imul", "div", "idiv"];
+const GRP2_NAMES: [&str; 8] = ["inc", "dec", "call", "call", "jmp", "jmp", "push", "???"];
+const SHIFT_NAMES: [&str; 8] = ["rol", "ror", "rcl", "rcr", "shl", "shr", "???", "sar"];
 
 fn main() {
     let args: Vec<String> = env::args().collect();
@@ -102,8 +103,12 @@ fn decode_instructions(mut bytes: &[u8], arg1: &mut String, arg2: &mut String) {
             0b000000 | 0b000010 | 0b000100 | 0b000110 | 0b001000 | 0b001010 | 0b001100
             | 0b001110 => {
                 let inst_idx = (byte1 >> 3 & 0b111) as usize;
-                let inst_name = ALU_INST_NAMES[inst_idx];
+                let inst_name = ALU_NAMES[inst_idx];
                 decode_regmem_reg(inst_name, &mut bytes, arg1, arg2);
+                continue 'decode;
+            }
+            0b110100 => {
+                decode_shift_regmem(&mut bytes, arg1);
                 continue 'decode;
             }
             _ => {}
@@ -127,7 +132,7 @@ fn decode_instructions(mut bytes: &[u8], arg1: &mut String, arg2: &mut String) {
             0b0000010 | 0b0000110 | 0b0001010 | 0b0001110 | 0b0010010 | 0b0010110 | 0b0011010
             | 0b0011110 => {
                 let inst_idx = (byte1 >> 3 & 0b0000111) as usize;
-                let inst_name = ALU_INST_NAMES[inst_idx];
+                let inst_name = ALU_NAMES[inst_idx];
                 decode_imm_acc(inst_name, &mut bytes);
                 continue 'decode;
             }
@@ -170,7 +175,7 @@ fn decode_instructions(mut bytes: &[u8], arg1: &mut String, arg2: &mut String) {
             0b1111011 => {
                 let reg_idx = (bytes[1] >> GRP_INST_IDX_SHIFT & GRP_INST_IDX_MASK) as usize;
                 if reg_idx >= 2 {
-                    decode_unary_regmem(GRP1[reg_idx], &mut bytes, arg1);
+                    decode_unary_regmem(GRP1_NAMES[reg_idx], &mut bytes, arg1);
                 } else {
                     decode_imm_regmem("test", &mut bytes, arg1, arg2);
                 }
@@ -178,7 +183,7 @@ fn decode_instructions(mut bytes: &[u8], arg1: &mut String, arg2: &mut String) {
             }
             0b1111111 => {
                 let reg_idx = (bytes[1] >> GRP_INST_IDX_SHIFT & GRP_INST_IDX_MASK) as usize;
-                decode_unary_regmem(GRP2[reg_idx], &mut bytes, arg1);
+                decode_unary_regmem(GRP2_NAMES[reg_idx], &mut bytes, arg1);
                 continue 'decode;
             }
             _ => (),
@@ -266,6 +271,21 @@ fn decode_instructions(mut bytes: &[u8], arg1: &mut String, arg2: &mut String) {
             0b11010100 => {
                 println!("aam");
                 bytes = &bytes[2..];
+                continue 'decode;
+            }
+            0b11010101 => {
+                println!("aad");
+                bytes = &bytes[2..];
+                continue 'decode;
+            }
+            0b10011000 => {
+                println!("cbw");
+                bytes = &bytes[1..];
+                continue 'decode;
+            }
+            0b10011001 => {
+                println!("cwd");
+                bytes = &bytes[1..];
                 continue 'decode;
             }
             _ => panic!(
@@ -450,7 +470,7 @@ fn decode_alu_imm_regmem(bytes: &mut &[u8], dst: &mut String, src: &mut String) 
 
     let (inst_idx, eff_add) = decode_effective_address_calculation(bytes, w_bit);
 
-    let inst_name = ALU_INST_NAMES[inst_idx];
+    let inst_name = ALU_NAMES[inst_idx];
     write_effective_address_size(dst, &eff_add, w_bit);
     write_effective_address(dst, &eff_add);
 
@@ -592,4 +612,24 @@ fn decode_unary_regmem(inst_name: &str, bytes: &mut &[u8], dst: &mut String) {
     write_effective_address(dst, &eff_add);
 
     println!("{inst_name} {dst}");
+}
+
+fn decode_shift_regmem(bytes: &mut &[u8], dst: &mut String) {
+    const V_BIT_SHIFT: u8 = 1;
+    const V_BIT_MASK: u8 = 1;
+
+    let w_bit = (bytes[0] & W_BIT_MASK) as usize;
+    let v_bit = (bytes[0] >> V_BIT_SHIFT) & V_BIT_MASK;
+    *bytes = &bytes[1..];
+
+    let inst_idx = ((bytes[0] >> GRP_INST_IDX_SHIFT) & GRP_INST_IDX_MASK) as usize;
+    let inst_name = SHIFT_NAMES[inst_idx];
+
+    let (_, eff_add) = decode_effective_address_calculation(bytes, w_bit);
+
+    write_effective_address_size(dst, &eff_add, w_bit);
+    write_effective_address(dst, &eff_add);
+    let src = if v_bit == 1 { "cl" } else { "1" };
+
+    println!("{inst_name} {dst}, {src}");
 }
