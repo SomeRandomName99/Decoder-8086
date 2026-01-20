@@ -186,6 +186,56 @@ fn decode_instructions(mut bytes: &[u8], arg1: &mut String, arg2: &mut String) {
                 decode_unary_regmem(GRP2_NAMES[reg_idx], &mut bytes, arg1);
                 continue 'decode;
             }
+            0b1010010 => {
+                let w_bit = byte1 & W_BIT_MASK;
+                if w_bit == 1 {
+                    println!("movsw")
+                } else {
+                    println!("movsb")
+                };
+                bytes = &bytes[1..];
+                continue 'decode;
+            }
+            0b1010011 => {
+                let w_bit = byte1 & W_BIT_MASK;
+                if w_bit == 1 {
+                    println!("cmpsw")
+                } else {
+                    println!("cmpsb")
+                };
+                bytes = &bytes[1..];
+                continue 'decode;
+            }
+            0b1010111 => {
+                let w_bit = byte1 & W_BIT_MASK;
+                if w_bit == 1 {
+                    println!("scasw")
+                } else {
+                    println!("scasb")
+                };
+                bytes = &bytes[1..];
+                continue 'decode;
+            }
+            0b1010110 => {
+                let w_bit = byte1 & W_BIT_MASK;
+                if w_bit == 1 {
+                    println!("lodsw")
+                } else {
+                    println!("lodsb")
+                };
+                bytes = &bytes[1..];
+                continue 'decode;
+            }
+            0b1010101 => {
+                let w_bit = byte1 & W_BIT_MASK;
+                if w_bit == 1 {
+                    println!("stosw")
+                } else {
+                    println!("stosb")
+                };
+                bytes = &bytes[1..];
+                continue 'decode;
+            }
             _ => (),
         }
 
@@ -285,6 +335,94 @@ fn decode_instructions(mut bytes: &[u8], arg1: &mut String, arg2: &mut String) {
             }
             0b10011001 => {
                 println!("cwd");
+                bytes = &bytes[1..];
+                continue 'decode;
+            }
+            0b11110011 => {
+                print!("rep ");
+                bytes = &bytes[1..];
+                continue 'decode;
+            }
+            0b11110010 => {
+                print!("repnz ");
+                bytes = &bytes[1..];
+                continue 'decode;
+            }
+            0b11000010 => {
+                decode_unary_imm("ret", &mut bytes);
+                continue 'decode;
+            }
+            0b11000011 => {
+                println!("ret");
+                bytes = &bytes[1..];
+                continue 'decode;
+            }
+            0b11001101 => {
+                println!("int {}", bytes[1]);
+                bytes = &bytes[2..];
+            }
+            0b11001100 => {
+                println!("int3");
+                bytes = &bytes[1..];
+                continue 'decode;
+            }
+            0b11001110 => {
+                println!("into");
+                bytes = &bytes[1..];
+                continue 'decode;
+            }
+            0b11001111 => {
+                println!("iret");
+                bytes = &bytes[1..];
+                continue 'decode;
+            }
+            0b11111000 => {
+                println!("clc");
+                bytes = &bytes[1..];
+                continue 'decode;
+            }
+            0b11110101 => {
+                println!("cmc");
+                bytes = &bytes[1..];
+                continue 'decode;
+            }
+            0b11111001 => {
+                println!("stc");
+                bytes = &bytes[1..];
+                continue 'decode;
+            }
+            0b11111100 => {
+                println!("cld");
+                bytes = &bytes[1..];
+                continue 'decode;
+            }
+            0b11111101 => {
+                println!("std");
+                bytes = &bytes[1..];
+                continue 'decode;
+            }
+            0b11111010 => {
+                println!("cli");
+                bytes = &bytes[1..];
+                continue 'decode;
+            }
+            0b11111011 => {
+                println!("sti");
+                bytes = &bytes[1..];
+                continue 'decode;
+            }
+            0b11110100 => {
+                println!("hlt");
+                bytes = &bytes[1..];
+                continue 'decode;
+            }
+            0b10011011 => {
+                println!("wait");
+                bytes = &bytes[1..];
+                continue 'decode;
+            }
+            0b11110000 => {
+                print!("lock ");
                 bytes = &bytes[1..];
                 continue 'decode;
             }
@@ -632,4 +770,12 @@ fn decode_shift_regmem(bytes: &mut &[u8], dst: &mut String) {
     let src = if v_bit == 1 { "cl" } else { "1" };
 
     println!("{inst_name} {dst}, {src}");
+}
+
+fn decode_unary_imm(inst_name: &str, bytes: &mut &[u8]) {
+    *bytes = &bytes[1..];
+    let immediate = i16::from_le_bytes([bytes[0], bytes[1]]);
+    *bytes = &bytes[2..];
+
+    println!("{inst_name} {immediate}")
 }
