@@ -28,6 +28,7 @@ const GRP1_NAMES: [&str; 8] = ["test", "???", "not", "neg", "mul", "imul", "div"
 const GRP2_NAMES: [&str; 8] = ["inc", "dec", "call", "call", "jmp", "jmp", "push", "???"];
 const SHIFT_NAMES: [&str; 8] = ["rol", "ror", "rcl", "rcr", "shl", "shr", "???", "sar"];
 
+struct SegOverrideReg(Option<&'static str>);
 fn main() {
     let args: Vec<String> = env::args().collect();
     let file_path = if args.len() != 2 {
@@ -45,6 +46,7 @@ fn main() {
 }
 
 fn decode_instructions(mut bytes: &[u8], arg1: &mut String, arg2: &mut String) {
+    let mut segment_override = SegOverrideReg(None);
     // The while loop is needed because different instructions have different lengths
     'decode: while !bytes.is_empty() {
         // Clear the arena like strings
@@ -93,22 +95,22 @@ fn decode_instructions(mut bytes: &[u8], arg1: &mut String, arg2: &mut String) {
         let opcode = byte1 >> 2;
         match opcode {
             0b100000 => {
-                decode_alu_imm_regmem(&mut bytes, arg1, arg2);
+                decode_alu_imm_regmem(&mut bytes, arg1, arg2, &mut segment_override);
                 continue 'decode;
             }
             0b100010 => {
-                decode_regmem_reg("mov", &mut bytes, arg1, arg2);
+                decode_regmem_reg("mov", &mut bytes, arg1, arg2, &mut segment_override);
                 continue 'decode;
             }
             0b000000 | 0b000010 | 0b000100 | 0b000110 | 0b001000 | 0b001010 | 0b001100
             | 0b001110 => {
                 let inst_idx = (byte1 >> 3 & 0b111) as usize;
                 let inst_name = ALU_NAMES[inst_idx];
-                decode_regmem_reg(inst_name, &mut bytes, arg1, arg2);
+                decode_regmem_reg(inst_name, &mut bytes, arg1, arg2, &mut segment_override);
                 continue 'decode;
             }
             0b110100 => {
-                decode_shift_regmem(&mut bytes, arg1);
+                decode_shift_regmem(&mut bytes, arg1, &mut segment_override);
                 continue 'decode;
             }
             _ => {}
@@ -126,7 +128,7 @@ fn decode_instructions(mut bytes: &[u8], arg1: &mut String, arg2: &mut String) {
                 continue 'decode;
             }
             0b1100011 => {
-                decode_imm_regmem("mov", &mut bytes, arg1, arg2);
+                decode_imm_regmem("mov", &mut bytes, arg1, arg2, &mut segment_override);
                 continue 'decode;
             }
             0b0000010 | 0b0000110 | 0b0001010 | 0b0001110 | 0b0010010 | 0b0010110 | 0b0011010
@@ -137,11 +139,11 @@ fn decode_instructions(mut bytes: &[u8], arg1: &mut String, arg2: &mut String) {
                 continue 'decode;
             }
             0b1000011 => {
-                decode_regmem_reg("xchg", &mut bytes, arg1, arg2);
+                decode_regmem_reg("xchg", &mut bytes, arg1, arg2, &mut segment_override);
                 continue 'decode;
             }
             0b1000010 => {
-                decode_regmem_reg("test", &mut bytes, arg1, arg2);
+                decode_regmem_reg("test", &mut bytes, arg1, arg2, &mut segment_override);
                 continue 'decode;
             }
             0b1010100 => {
@@ -175,15 +177,20 @@ fn decode_instructions(mut bytes: &[u8], arg1: &mut String, arg2: &mut String) {
             0b1111011 => {
                 let reg_idx = (bytes[1] >> GRP_INST_IDX_SHIFT & GRP_INST_IDX_MASK) as usize;
                 if reg_idx >= 2 {
-                    decode_unary_regmem(GRP1_NAMES[reg_idx], &mut bytes, arg1);
+                    decode_unary_regmem(
+                        GRP1_NAMES[reg_idx],
+                        &mut bytes,
+                        arg1,
+                        &mut segment_override,
+                    );
                 } else {
-                    decode_imm_regmem("test", &mut bytes, arg1, arg2);
+                    decode_imm_regmem("test", &mut bytes, arg1, arg2, &mut segment_override);
                 }
                 continue 'decode;
             }
             0b1111111 => {
                 let reg_idx = (bytes[1] >> GRP_INST_IDX_SHIFT & GRP_INST_IDX_MASK) as usize;
-                decode_unary_regmem(GRP2_NAMES[reg_idx], &mut bytes, arg1);
+                decode_unary_regmem(GRP2_NAMES[reg_idx], &mut bytes, arg1, &mut segment_override);
                 continue 'decode;
             }
             0b1010010 => {
@@ -250,7 +257,7 @@ fn decode_instructions(mut bytes: &[u8], arg1: &mut String, arg2: &mut String) {
                 continue 'decode;
             }
             0b10001111 => {
-                decode_unary_regmem("pop", &mut bytes, arg1);
+                decode_unary_regmem("pop", &mut bytes, arg1, &mut segment_override);
                 continue 'decode;
             }
             0b00000110 | 0b00001110 | 0b00010110 | 0b00011110 => {
@@ -287,15 +294,15 @@ fn decode_instructions(mut bytes: &[u8], arg1: &mut String, arg2: &mut String) {
                 continue 'decode;
             }
             0b10001101 => {
-                decode_load_ptr("lea", &mut bytes, arg1);
+                decode_load_ptr("lea", &mut bytes, arg1, &mut segment_override);
                 continue 'decode;
             }
             0b11000101 => {
-                decode_load_ptr("lds", &mut bytes, arg1);
+                decode_load_ptr("lds", &mut bytes, arg1, &mut segment_override);
                 continue 'decode;
             }
             0b11000100 => {
-                decode_load_ptr("les", &mut bytes, arg1);
+                decode_load_ptr("les", &mut bytes, arg1, &mut segment_override);
                 continue 'decode;
             }
             0b00110111 => {
@@ -426,6 +433,26 @@ fn decode_instructions(mut bytes: &[u8], arg1: &mut String, arg2: &mut String) {
                 bytes = &bytes[1..];
                 continue 'decode;
             }
+            0b00100110 => {
+                segment_override = SegOverrideReg(Some("es:"));
+                bytes = &bytes[1..];
+                continue 'decode;
+            }
+            0b00101110 => {
+                segment_override = SegOverrideReg(Some("cs:"));
+                bytes = &bytes[1..];
+                continue 'decode;
+            }
+            0b00110110 => {
+                segment_override = SegOverrideReg(Some("ss:"));
+                bytes = &bytes[1..];
+                continue 'decode;
+            }
+            0b00111110 => {
+                segment_override = SegOverrideReg(Some("ds:"));
+                bytes = &bytes[1..];
+                continue 'decode;
+            }
             _ => panic!(
                 "Unsupported instruction. Opcode byte: {byte1:#b}, {:#b}",
                 bytes[0]
@@ -500,7 +527,17 @@ fn write_effective_address_size(buffer: &mut String, eff_add: &EffectiveAddress,
     }
 }
 
-fn write_effective_address(buffer: &mut String, eff_add: &EffectiveAddress) {
+fn write_effective_address(
+    buffer: &mut String,
+    eff_add: &EffectiveAddress,
+    segment_override: &mut SegOverrideReg,
+) {
+    if !matches!(*eff_add, EffectiveAddress::Reg(_))
+        && let SegOverrideReg(Some(reg)) = segment_override
+    {
+        write!(buffer, "{reg}").unwrap();
+        *segment_override = SegOverrideReg(None);
+    }
     match *eff_add {
         EffectiveAddress::Reg(rm_reg_str) => {
             buffer.push_str(rm_reg_str);
@@ -520,14 +557,20 @@ fn write_effective_address(buffer: &mut String, eff_add: &EffectiveAddress) {
     }
 }
 
-fn decode_imm_regmem(inst_name: &str, bytes: &mut &[u8], dst: &mut String, src: &mut String) {
+fn decode_imm_regmem(
+    inst_name: &str,
+    bytes: &mut &[u8],
+    dst: &mut String,
+    src: &mut String,
+    segment_override: &mut SegOverrideReg,
+) {
     let byte1 = bytes[0];
     *bytes = &bytes[1..];
     let w_bit = (byte1 & W_BIT_MASK) as usize;
 
     let (_, eff_add) = decode_effective_address_calculation(bytes, w_bit);
     write_effective_address_size(dst, &eff_add, w_bit);
-    write_effective_address(dst, &eff_add);
+    write_effective_address(dst, &eff_add, segment_override);
 
     if w_bit == 1 {
         let immediate = i16::from_le_bytes([bytes[0], bytes[1]]);
@@ -542,7 +585,13 @@ fn decode_imm_regmem(inst_name: &str, bytes: &mut &[u8], dst: &mut String, src: 
     println!("{inst_name} {dst}, {src}");
 }
 
-fn decode_regmem_reg(instruction: &str, bytes: &mut &[u8], arg1: &mut String, arg2: &mut String) {
+fn decode_regmem_reg(
+    instruction: &str,
+    bytes: &mut &[u8],
+    arg1: &mut String,
+    arg2: &mut String,
+    segment_override: &mut SegOverrideReg,
+) {
     const D_BIT_SHIFT: u8 = 1;
     const D_BIT_MASK: u8 = 0b00000010;
 
@@ -559,7 +608,7 @@ fn decode_regmem_reg(instruction: &str, bytes: &mut &[u8], arg1: &mut String, ar
 
     let (reg, eff_add) = decode_effective_address_calculation(bytes, w_bit);
     dst.push_str(REGISTER_MAP[reg][w_bit]);
-    write_effective_address(src, &eff_add);
+    write_effective_address(src, &eff_add, segment_override);
 
     println!("{instruction} {arg1}, {arg2}");
 }
@@ -599,7 +648,12 @@ fn decode_mov_mem_acc(bytes: &mut &[u8], acc_first: bool) {
     }
 }
 
-fn decode_alu_imm_regmem(bytes: &mut &[u8], dst: &mut String, src: &mut String) {
+fn decode_alu_imm_regmem(
+    bytes: &mut &[u8],
+    dst: &mut String,
+    src: &mut String,
+    segment_override: &mut SegOverrideReg,
+) {
     let byte1 = bytes[0];
     *bytes = &bytes[1..];
 
@@ -610,7 +664,7 @@ fn decode_alu_imm_regmem(bytes: &mut &[u8], dst: &mut String, src: &mut String) 
 
     let inst_name = ALU_NAMES[inst_idx];
     write_effective_address_size(dst, &eff_add, w_bit);
-    write_effective_address(dst, &eff_add);
+    write_effective_address(dst, &eff_add, segment_override);
 
     if w_bit == 0 {
         let immediate = bytes[0] as i8;
@@ -663,16 +717,6 @@ fn decode_jmp_and_loops(bytes: &mut &[u8], is_jmp: bool) {
 
     println!("{inst_name} $+2+{disp}");
 }
-
-// fn decode_push_pop_mem(inst_name: &str, bytes: &mut &[u8], dst: &mut String) {
-//     *bytes = &bytes[1..];
-//
-//     dst.push_str("word ");
-//     let (_, eff_add) = decode_effective_address_calculation(bytes, 1);
-//     write_effective_address(dst, &eff_add);
-//
-//     println!("{inst_name} {dst}");
-// }
 
 fn decode_one_byte_reg(inst_name: &str, bytes: &mut &[u8]) {
     let byte1 = bytes[0];
@@ -730,29 +774,39 @@ fn decode_in_out(
     println!("{inst_name} {arg1}, {arg2}");
 }
 
-fn decode_load_ptr(inst_name: &str, bytes: &mut &[u8], dst: &mut String) {
+fn decode_load_ptr(
+    inst_name: &str,
+    bytes: &mut &[u8],
+    dst: &mut String,
+    segment_override: &mut SegOverrideReg,
+) {
     *bytes = &bytes[1..];
 
     let (reg, eff_add) = decode_effective_address_calculation(bytes, 1);
     let reg_str = REGISTER_MAP[reg][1];
-    write_effective_address(dst, &eff_add);
+    write_effective_address(dst, &eff_add, segment_override);
 
     println!("{inst_name} {reg_str}, {dst}");
 }
 
-fn decode_unary_regmem(inst_name: &str, bytes: &mut &[u8], dst: &mut String) {
+fn decode_unary_regmem(
+    inst_name: &str,
+    bytes: &mut &[u8],
+    dst: &mut String,
+    segment_override: &mut SegOverrideReg,
+) {
     let w_bit = (bytes[0] & W_BIT_MASK) as usize;
     *bytes = &bytes[1..];
 
     let (_, eff_add) = decode_effective_address_calculation(bytes, w_bit);
 
     write_effective_address_size(dst, &eff_add, w_bit);
-    write_effective_address(dst, &eff_add);
+    write_effective_address(dst, &eff_add, segment_override);
 
     println!("{inst_name} {dst}");
 }
 
-fn decode_shift_regmem(bytes: &mut &[u8], dst: &mut String) {
+fn decode_shift_regmem(bytes: &mut &[u8], dst: &mut String, segment_override: &mut SegOverrideReg) {
     const V_BIT_SHIFT: u8 = 1;
     const V_BIT_MASK: u8 = 1;
 
@@ -766,7 +820,7 @@ fn decode_shift_regmem(bytes: &mut &[u8], dst: &mut String) {
     let (_, eff_add) = decode_effective_address_calculation(bytes, w_bit);
 
     write_effective_address_size(dst, &eff_add, w_bit);
-    write_effective_address(dst, &eff_add);
+    write_effective_address(dst, &eff_add, segment_override);
     let src = if v_bit == 1 { "cl" } else { "1" };
 
     println!("{inst_name} {dst}, {src}");
