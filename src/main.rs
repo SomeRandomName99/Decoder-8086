@@ -359,8 +359,17 @@ fn decode_instructions(mut bytes: &[u8], arg1: &mut String, arg2: &mut String) {
                 decode_unary_imm("ret", &mut bytes);
                 continue 'decode;
             }
+            0b11001010 => {
+                decode_unary_imm("retf", &mut bytes);
+                continue 'decode;
+            }
             0b11000011 => {
                 println!("ret");
+                bytes = &bytes[1..];
+                continue 'decode;
+            }
+            0b11001011 => {
+                println!("retf");
                 bytes = &bytes[1..];
                 continue 'decode;
             }
@@ -451,6 +460,26 @@ fn decode_instructions(mut bytes: &[u8], arg1: &mut String, arg2: &mut String) {
             0b00111110 => {
                 segment_override = SegOverrideReg(Some("ds:"));
                 bytes = &bytes[1..];
+                continue 'decode;
+            }
+            0b10011010 => {
+                decode_direct_intersegment("call", &mut bytes);
+                continue 'decode;
+            }
+            0b11101010 => {
+                decode_direct_intersegment("jmp", &mut bytes);
+                continue 'decode;
+            }
+            0b11101001 => {
+                decode_jmp_and_call_long_offset("jmp", &mut bytes);
+                continue 'decode;
+            }
+            0b11101000 => {
+                decode_jmp_and_call_long_offset("call", &mut bytes);
+                continue 'decode;
+            }
+            0b10001110 | 0b10001100 => {
+                decode_mov_seg(&mut bytes, arg1, &mut segment_override);
                 continue 'decode;
             }
             _ => panic!(
@@ -736,6 +765,25 @@ fn decode_push_pop_seg(inst_name: &str, bytes: &mut &[u8]) {
     println!("{inst_name} {}", SEGMENT_REGS[seg_idx]);
 }
 
+fn decode_mov_seg(bytes: &mut &[u8], dst: &mut String, segment_override: &mut SegOverrideReg) {
+    const D_BIT_SHIFT: u8 = 1;
+    let d_bit = bytes[0] >> D_BIT_SHIFT & 1;
+    *bytes = &bytes[1..];
+
+    // In this case the w_bit does not matter, 1 is passed for convenience
+    let (reg_idx, eff_add) = decode_effective_address_calculation(bytes, 1);
+    write_effective_address(dst, &eff_add, segment_override);
+
+    // There are only 4 Segment registers so only the last 2 bits are needed
+    let reg_name = SEGMENT_REGS[reg_idx & 0b11];
+
+    if d_bit == 1 {
+        println!("mov {reg_name}, {dst}");
+    } else {
+        println!("mov {dst}, {reg_name}");
+    }
+}
+
 fn decode_xchg_acc(bytes: &mut &[u8]) {
     let byte1 = bytes[0];
     *bytes = &bytes[1..];
@@ -795,8 +843,14 @@ fn decode_unary_regmem(
     dst: &mut String,
     segment_override: &mut SegOverrideReg,
 ) {
+    const INTERSEGMENT_SHIFT: u8 = 3;
     let w_bit = (bytes[0] & W_BIT_MASK) as usize;
     *bytes = &bytes[1..];
+
+    let intersegment_bit = bytes[0] >> INTERSEGMENT_SHIFT & 1;
+    if intersegment_bit == 1 && (inst_name == "call" || inst_name == "jmp") {
+        dst.push_str("far ");
+    }
 
     let (_, eff_add) = decode_effective_address_calculation(bytes, w_bit);
 
@@ -832,4 +886,19 @@ fn decode_unary_imm(inst_name: &str, bytes: &mut &[u8]) {
     *bytes = &bytes[2..];
 
     println!("{inst_name} {immediate}")
+}
+
+fn decode_direct_intersegment(inst_name: &str, bytes: &mut &[u8]) {
+    let offset = u16::from_le_bytes([bytes[1], bytes[2]]);
+    let segment = u16::from_le_bytes([bytes[3], bytes[4]]);
+    *bytes = &bytes[5..];
+
+    println!("{inst_name} {segment}:{offset}");
+}
+
+fn decode_jmp_and_call_long_offset(inst_name: &str, bytes: &mut &[u8]) {
+    let offset = i16::from_le_bytes([bytes[1], bytes[2]]);
+    *bytes = &bytes[3..];
+
+    println!("{inst_name} $+3+{offset}"); // 3 is the size of the instruction
 }
